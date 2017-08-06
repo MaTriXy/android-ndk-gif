@@ -1,9 +1,20 @@
 #include "GifDecoder.h"
 #include "DataBlock.h"
+#include "BitmapIterator.h"
+
+template< typename T >
+struct array_deleter
+{
+	void operator ()( T const * p)
+	{
+		delete[] p;
+	}
+};
 
 GifDecoder::GifDecoder()
 {
 	pixels = NULL;
+	lastBitmapIterator = NULL;
 }
 
 GifDecoder::~GifDecoder()
@@ -15,6 +26,7 @@ GifDecoder::~GifDecoder()
 	for (std::vector<GifFrame>::iterator i = frames.begin(); i != frames.end(); ++i) {
 		delete i->data;
 	}
+	delete lastBitmapIterator;
 }
 
 void GifDecoder::init()
@@ -35,7 +47,7 @@ void GifDecoder::init()
 	lastBitmap = NULL;
 }
 
-bool GifDecoder::load(const char* fileName) 
+bool GifDecoder::load(const char* fileName)
 {
 	init();
 
@@ -56,6 +68,24 @@ bool GifDecoder::load(const char* fileName)
 	return result;
 }
 
+BitmapIterator* GifDecoder::loadUsingIterator(const char* fileName)
+{
+	init();
+
+	FILE* fp = fopen(fileName, "rb");
+	if (NULL == fp) {
+		return NULL;
+	}
+	fseek(fp, 0, SEEK_END);
+	int32_t fileSize = ftell(fp);
+	uint8_t* data = new uint8_t[fileSize];
+	rewind(fp);
+	fread(data, fileSize, 1, fp);
+	fclose(fp);
+
+	return loadFromMemoryUsingIterator(std::shared_ptr<uint8_t>(data, array_deleter<uint8_t>()), fileSize);
+}
+
 bool GifDecoder::loadFromMemory(const uint8_t* data, uint32_t size)
 {
 	DataBlock dataBlock(data, size);
@@ -63,6 +93,20 @@ bool GifDecoder::loadFromMemory(const uint8_t* data, uint32_t size)
 		return false;
 	}
 	return readContents(&dataBlock);
+}
+
+BitmapIterator* GifDecoder::loadFromMemoryUsingIterator(std::shared_ptr<uint8_t> data, uint32_t size)
+{
+	DataBlock dataBlock(data.get(), size);
+	if (!readHeader(&dataBlock)) {
+		return NULL;
+	}
+	if (NULL != lastBitmapIterator) {
+		delete lastBitmapIterator;
+	}
+
+	lastBitmapIterator = new BitmapIterator(this, data, dataBlock);
+	return lastBitmapIterator;
 }
 
 bool GifDecoder::readLSD(DataBlock* dataBlock)
@@ -119,12 +163,12 @@ bool GifDecoder::readHeader(DataBlock* dataBlock)
 		if (!readColorTable(dataBlock, gct, gctSize)) {
 			return false;
 		}
-		bgColor = 0xFF000000 | gct[bgIndex];
+		bgColor = gct[bgIndex];
  	}
 	return true;
 }
 
-bool GifDecoder::readContents(DataBlock* dataBlock)
+bool GifDecoder::readContents(DataBlock* dataBlock, bool isAFrameNeeded)
 {
 	// read GIF file content blocks
 	uint8_t code;
@@ -136,6 +180,12 @@ bool GifDecoder::readContents(DataBlock* dataBlock)
 		case 0x2C: // image separator
 			if (!readBitmap(dataBlock)) {
 				return false;
+			} else if (isAFrameNeeded) {
+				if (1 < frameCount) {
+					delete[] frames[frameCount - 2].data;
+					frames[frameCount - 2].data = NULL;
+				}
+				return true;
 			}
 			break;
 		case 0x21: // extension
@@ -320,7 +370,7 @@ bool GifDecoder::decodeBitmapData(DataBlock* dataBlock)
 		delete[] pixels;
 		pixels = new uint8_t[npix];
 	}
-	
+
 	uint16_t prefix[MAX_STACK_SIZE];
 	uint8_t suffix[MAX_STACK_SIZE];
 	uint8_t pixelStack[MAX_STACK_SIZE + 1];
@@ -410,6 +460,9 @@ bool GifDecoder::decodeBitmapData(DataBlock* dataBlock)
 		// Pop a pixel off the pixel stack.
 		top--;
 		pixels[pi++] = pixelStack[top];
+		if (255 == pixelStack[top]) {
+			int a = 0;
+		}
 		i++;
 	}
 	for (i = pi; i < npix; i++) {
