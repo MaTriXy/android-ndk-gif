@@ -2,22 +2,29 @@ apply plugin: 'com.android.application'
 
 buildscript {
     repositories {
-        jcenter()
+        mavenCentral()
+        google()
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:2.2.2'
+        classpath 'com.android.tools.build:gradle:7.0.4'
     }
 }
-
+allprojects {
+    repositories {
+        google()
+    }
+}
 repositories {
     maven {
-        url "http://dl.bintray.com/waynejo/maven"
+        url 'https://repo1.maven.org/maven2'
     }
 }
 
 android {
-    compileSdkVersion 18
-    buildToolsVersion "22.0.1"
+    buildToolsVersion "30.0.2"
 
     sourceSets {
         main {
@@ -28,22 +35,22 @@ android {
             renderscript.srcDirs = ['src']
             res.srcDirs = ['res']
             assets.srcDirs = ['assets']
+            test.root = ['test']
         }
-
-        instrumentTest.setRoot('tests')
 
         debug.setRoot('build-types/debug')
         release.setRoot('build-types/release')
     }
 
     defaultConfig {
-        minSdkVersion 18
-        targetSdkVersion 21
+        targetSdkVersion 29
+        compileSdkVersion 22
         versionCode 1
         versionName "0.1.0"
+        minSdkVersion 18
     }
 
     dependencies {
-        compile('com.waynejo:androidndkgif:0.3.2')
+        implementation ('io.github.waynejo:androidndkgif:1.0.1')
     }
 }
